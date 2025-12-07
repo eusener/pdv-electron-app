@@ -1,5 +1,3 @@
-import { ReactNode } from 'react';
-
 export interface LayoutConfig {
     id: string;
     name: string;
