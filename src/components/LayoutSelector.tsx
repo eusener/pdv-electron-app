@@ -1,6 +1,7 @@
 import React from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { LayoutConfig, getAllLayouts } from '../layouts/config';
+import { Check, ChevronDown } from 'lucide-react';
 
 interface LayoutSelectorProps {
     currentLayout: LayoutConfig;
@@ -21,7 +22,7 @@ export const LayoutSelector = ({
         <AnimatePresence>
             {isOpen && (
                 <>
-                    {/* Backdrop */}
+                    {/* Scrim (backdrop) */}
                     <motion.div
                         initial={{ opacity: 0 }}
                         animate={{ opacity: 1 }}
@@ -30,75 +31,50 @@ export const LayoutSelector = ({
                         style={{
                             position: 'fixed',
                             inset: 0,
-                            background: 'rgba(0, 0, 0, 0.7)',
-                            backdropFilter: 'blur(4px)',
+                            background: 'rgba(0, 0, 0, 0.32)',
                             zIndex: 100,
                         }}
                     />
 
-                    {/* Modal */}
+                    {/* Dialog */}
                     <motion.div
-                        initial={{ opacity: 0, scale: 0.95, y: 20 }}
-                        animate={{ opacity: 1, scale: 1, y: 0 }}
-                        exit={{ opacity: 0, scale: 0.95, y: 20 }}
+                        initial={{ opacity: 0, scale: 0.9, x: '-50%', y: '-50%' }}
+                        animate={{ opacity: 1, scale: 1, x: '-50%', y: '-50%' }}
+                        exit={{ opacity: 0, scale: 0.9, x: '-50%', y: '-50%' }}
                         transition={{ type: 'spring', damping: 25, stiffness: 300 }}
                         style={{
                             position: 'fixed',
                             top: '50%',
                             left: '50%',
-                            transform: 'translate(-50%, -50%)',
-                            background: 'linear-gradient(135deg, var(--bg-secondary) 0%, var(--bg-tertiary) 100%)',
-                            borderRadius: 'var(--radius-xl)',
-                            padding: 'var(--space-xl)',
+                            background: 'var(--md-surface-container-high)',
+                            borderRadius: 'var(--shape-corner-extra-large)',
+                            padding: 'var(--space-lg)',
                             width: '90%',
-                            maxWidth: '600px',
-                            border: '1px solid var(--glass-border)',
-                            boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.5)',
+                            maxWidth: 560,
+                            boxShadow: 'var(--elevation-3)',
                             zIndex: 101,
                         }}
                     >
-                        <div style={{
-                            display: 'flex',
-                            justifyContent: 'space-between',
-                            alignItems: 'center',
-                            marginBottom: 'var(--space-lg)',
-                        }}>
-                            <div>
-                                <h2 style={{
-                                    margin: 0,
-                                    fontSize: '1.5rem',
-                                    fontWeight: 700,
-                                }}>
-                                    Escolha o Modelo
-                                </h2>
-                                <p style={{
-                                    margin: '4px 0 0',
-                                    color: 'var(--text-muted)',
-                                    fontSize: '0.875rem',
-                                }}>
-                                    Selecione o tipo de negócio para personalizar a interface
-                                </p>
-                            </div>
-                            <button
-                                onClick={onClose}
-                                style={{
-                                    background: 'var(--bg-elevated)',
-                                    border: 'none',
-                                    borderRadius: 'var(--radius-sm)',
-                                    width: 36,
-                                    height: 36,
-                                    cursor: 'pointer',
-                                    color: 'var(--text-secondary)',
-                                    fontSize: '1.25rem',
-                                    display: 'flex',
-                                    alignItems: 'center',
-                                    justifyContent: 'center',
-                                }}
-                            >
-                                ✕
-                            </button>
+                        {/* Header */}
+                        <div style={{ marginBottom: 'var(--space-lg)' }}>
+                            <h2 style={{
+                                margin: 0,
+                                fontSize: 24,
+                                fontWeight: 400,
+                                color: 'var(--md-on-surface)',
+                            }}>
+                                Escolha o Modelo
+                            </h2>
+                            <p style={{
+                                margin: '8px 0 0',
+                                fontSize: 14,
+                                color: 'var(--md-on-surface-variant)',
+                            }}>
+                                Selecione o tipo de negócio para personalizar a interface
+                            </p>
                         </div>
 
+                        {/* Layout Options */}
                         <div style={{
                             display: 'grid',
                             gridTemplateColumns: 'repeat(2, 1fr)',
@@ -109,7 +85,7 @@ export const LayoutSelector = ({
                                 return (
                                     <motion.button
                                         key={layout.id}
-                                        whileHover={{ scale: 1.02, y: -4 }}
+                                        whileHover={{ scale: 1.02 }}
                                         whileTap={{ scale: 0.98 }}
                                         onClick={() => {
                                             onSelect(layout);
@@ -117,88 +93,95 @@ export const LayoutSelector = ({
                                         }}
                                         style={{
                                             background: isSelected
-                                                ? `linear-gradient(135deg, ${layout.theme.accentPrimary}20, ${layout.theme.accentPrimary}10)`
-                                                : 'var(--bg-elevated)',
+                                                ? 'var(--md-secondary-container)'
+                                                : 'var(--md-surface-container)',
                                             border: isSelected
-                                                ? `2px solid ${layout.theme.accentPrimary}`
-                                                : '1px solid var(--glass-border)',
-                                            borderRadius: 'var(--radius-lg)',
-                                            padding: 'var(--space-lg)',
+                                                ? 'none'
+                                                : '1px solid var(--md-outline-variant)',
+                                            borderRadius: 'var(--shape-corner-large)',
+                                            padding: 'var(--space-md)',
                                             cursor: 'pointer',
                                             textAlign: 'left',
-                                            transition: 'var(--transition-normal)',
                                             position: 'relative',
-                                            overflow: 'hidden',
                                         }}
                                     >
+                                        {/* Selected Check */}
                                         {isSelected && (
-                                            <motion.div
-                                                layoutId="selected-indicator"
-                                                style={{
-                                                    position: 'absolute',
-                                                    top: 10,
-                                                    right: 10,
-                                                    background: layout.theme.accentPrimary,
-                                                    borderRadius: '50%',
-                                                    width: 24,
-                                                    height: 24,
-                                                    display: 'flex',
-                                                    alignItems: 'center',
-                                                    justifyContent: 'center',
-                                                    fontSize: '0.75rem',
-                                                    color: '#fff',
-                                                }}
-                                            >
-                                                ✓
-                                            </motion.div>
+                                            <div style={{
+                                                position: 'absolute',
+                                                top: 12,
+                                                right: 12,
+                                                width: 24,
+                                                height: 24,
+                                                borderRadius: 'var(--shape-corner-full)',
+                                                background: 'var(--md-primary)',
+                                                color: 'var(--md-on-primary)',
+                                                display: 'flex',
+                                                alignItems: 'center',
+                                                justifyContent: 'center',
+                                            }}>
+                                                <Check size={14} />
+                                            </div>
                                         )}
 
+                                        {/* Icon */}
                                         <div style={{
-                                            fontSize: '2.5rem',
+                                            fontSize: 32,
                                             marginBottom: 'var(--space-sm)',
+                                            color: isSelected ? 'var(--md-primary)' : 'var(--md-on-surface)',
                                         }}>
                                             {layout.icon}
                                         </div>
 
-                                        <h3 style={{
-                                            margin: 0,
-                                            fontSize: '1.1rem',
-                                            fontWeight: 600,
-                                            color: isSelected ? layout.theme.accentPrimary : 'var(--text-primary)',
+                                        {/* Name */}
+                                        <div style={{
+                                            fontSize: 16,
+                                            fontWeight: 500,
+                                            color: isSelected
+                                                ? 'var(--md-on-secondary-container)'
+                                                : 'var(--md-on-surface)',
+                                            marginBottom: 4,
                                         }}>
                                             {layout.name}
-                                        </h3>
+                                        </div>
 
-                                        <p style={{
-                                            margin: '4px 0 0',
-                                            fontSize: '0.8rem',
-                                            color: 'var(--text-muted)',
+                                        {/* Description */}
+                                        <div style={{
+                                            fontSize: 12,
+                                            color: isSelected
+                                                ? 'var(--md-on-secondary-container)'
+                                                : 'var(--md-on-surface-variant)',
                                         }}>
                                             {layout.description}
-                                        </p>
-
-                                        {/* Color Preview */}
-                                        <div style={{
-                                            display: 'flex',
-                                            gap: '6px',
-                                            marginTop: 'var(--space-md)',
-                                        }}>
-                                            <div style={{
-                                                width: 20,
-                                                height: 20,
-                                                borderRadius: '50%',
-                                                background: layout.theme.accentPrimary,
-                                            }} />
-                                            <div style={{
-                                                width: 20,
-                                                height: 20,
-                                                borderRadius: '50%',
-                                                background: layout.theme.accentSecondary,
-                                            }} />
                                         </div>
                                     </motion.button>
                                 );
                             })}
+                        </div>
+
+                        {/* Actions */}
+                        <div style={{
+                            display: 'flex',
+                            justifyContent: 'flex-end',
+                            marginTop: 'var(--space-lg)',
+                        }}>
+                            <motion.button
+                                whileTap={{ scale: 0.95 }}
+                                onClick={onClose}
+                                style={{
+                                    height: 40,
+                                    padding: '0 24px',
+                                    background: 'transparent',
+                                    border: 'none',
+                                    borderRadius: 'var(--shape-corner-full)',
+                                    color: 'var(--md-primary)',
+                                    fontSize: 14,
+                                    fontWeight: 500,
+                                    cursor: 'pointer',
+                                }}
+                            >
+                                Fechar
+                            </motion.button>
                         </div>
                     </motion.div>
                 </>
@@ -207,7 +190,7 @@ export const LayoutSelector = ({
     );
 };
 
-// Compact button to open the selector
+// Navigation Rail Item (Material You style)
 interface LayoutToggleProps {
     layout: LayoutConfig;
     onClick: () => void;
@@ -216,26 +199,35 @@ interface LayoutToggleProps {
 export const LayoutToggle = ({ layout, onClick }: LayoutToggleProps) => {
     return (
         <motion.button
-            whileHover={{ scale: 1.05 }}
+            whileHover={{ backgroundColor: 'rgba(255,255,255,0.08)' }}
             whileTap={{ scale: 0.95 }}
             onClick={onClick}
             style={{
                 display: 'flex',
                 alignItems: 'center',
-                gap: '8px',
-                padding: '8px 14px',
-                background: 'var(--bg-elevated)',
-                border: '1px solid var(--glass-border)',
-                borderRadius: 'var(--radius-xl)',
+                gap: 12,
+                height: 40,
+                padding: '0 16px 0 12px',
+                background: 'var(--md-surface-container-highest)',
+                border: 'none',
+                borderRadius: 'var(--shape-corner-full)',
                 cursor: 'pointer',
-                color: 'var(--text-primary)',
-                fontSize: '0.875rem',
+                color: 'var(--md-on-surface)',
+                fontSize: 14,
                 fontWeight: 500,
             }}
         >
-            <span>{layout.icon}</span>
+            <span style={{ fontSize: 18, display: 'flex' }}>{layout.icon}</span>
             <span>{layout.name}</span>
-            <span style={{ opacity: 0.5, fontSize: '0.75rem' }}>▼</span>
+            <span style={{
+                color: 'var(--md-on-surface-variant)',
+                fontSize: 12,
+                marginLeft: 4,
+                display: 'flex',
+                alignItems: 'center'
+            }}>
+                <ChevronDown size={14} />
+            </span>
         </motion.button>
     );
 };
