@@ -95,6 +95,11 @@ export const SavedSalesDialog = ({ isOpen, onClose, sales, onLoad, onDelete }: S
                                                             #{sale.id.slice(0, 4)}
                                                         </span>
                                                     </div>
+                                                    {sale.clientName && (
+                                                        <div style={{ fontSize: 13, fontWeight: 500, color: 'var(--md-primary)', marginTop: 2 }}>
+                                                            {sale.clientName}
+                                                        </div>
+                                                    )}
                                                     <div style={{ fontSize: 12, color: 'var(--md-on-surface-variant)' }}>
                                                         {new Date(sale.date).toLocaleString()} • {sale.items.reduce((a, b) => a + b.qtd, 0)} itens
                                                     </div>

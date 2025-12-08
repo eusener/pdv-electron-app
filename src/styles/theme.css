@@ -199,7 +199,7 @@ body {
 }
 
 .app-grid.with-recommendations {
-    grid-template-columns: 360px 220px 1fr;
+    grid-template-columns: 360px 240px 1fr;
 }
 
 .app-grid.cart-right {
@@ -207,7 +207,7 @@ body {
 }
 
 .app-grid.cart-right.with-recommendations {
-    grid-template-columns: 1fr 220px 360px;
+    grid-template-columns: 1fr 240px 360px;
 }
 
 .cart-panel {
@@ -220,16 +220,7 @@ body {
 .recs-panel {
     height: 100%;
     min-height: 0;
-    border-right: 1px solid var(--md-outline-variant);
     overflow-y: auto;
-    background: var(--md-surface-container-lowest);
-    display: flex;
-    flex-direction: column;
-}
-
-.app-grid.cart-right .recs-panel {
-    border-right: none;
-    border-left: 1px solid var(--md-outline-variant);
 }
 
 .main-panel {

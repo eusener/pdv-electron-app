@@ -63,3 +63,50 @@ CREATE TABLE IF NOT EXISTS vendas_sync_queue (
 
 -- Índice para busca rápida do worker
 CREATE INDEX IF NOT EXISTS idx_sync_status ON vendas_sync_queue(status) WHERE status != 'SYNCED';
+
+-- =====================================================
+-- GESTÃO DE CAIXA
+-- =====================================================
+
+-- Tabela de Caixa (sessões de caixa)
+CREATE TABLE IF NOT EXISTS caixa (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    numero VARCHAR(20) NOT NULL DEFAULT '001',
+    operador VARCHAR(100),
+    status VARCHAR(20) DEFAULT 'ABERTO', -- ABERTO, FECHADO
+    valor_inicial DECIMAL(10,2) DEFAULT 0,
+    data_abertura TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    data_fechamento TIMESTAMP WITH TIME ZONE,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- Tabela de Movimentos de Caixa (sangrias, suprimentos, vendas)
+CREATE TABLE IF NOT EXISTS caixa_movimentos (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    caixa_id UUID REFERENCES caixa(id),
+    tipo VARCHAR(20) NOT NULL, -- SANGRIA, SUPRIMENTO, VENDA
+    valor DECIMAL(10,2) NOT NULL,
+    motivo VARCHAR(100),
+    observacoes TEXT,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- Tabela de Fechamentos de Caixa (histórico)
+CREATE TABLE IF NOT EXISTS caixa_fechamentos (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    caixa_id UUID NOT NULL REFERENCES caixa(id),
+    valor_inicial DECIMAL(10,2) NOT NULL,
+    total_vendas DECIMAL(10,2) DEFAULT 0,
+    total_sangrias DECIMAL(10,2) DEFAULT 0,
+    total_suprimentos DECIMAL(10,2) DEFAULT 0,
+    valor_esperado DECIMAL(10,2) NOT NULL,
+    valor_contado DECIMAL(10,2),
+    diferenca DECIMAL(10,2) DEFAULT 0,
+    observacoes TEXT,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- Índices para Gestão de Caixa
+CREATE INDEX IF NOT EXISTS idx_caixa_status ON caixa(status);
+CREATE INDEX IF NOT EXISTS idx_caixa_movimentos_caixa ON caixa_movimentos(caixa_id);
+CREATE INDEX IF NOT EXISTS idx_caixa_movimentos_tipo ON caixa_movimentos(tipo);

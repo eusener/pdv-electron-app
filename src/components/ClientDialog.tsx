@@ -61,33 +61,53 @@ export const ClientDialog = ({ isOpen, onClose, onSelect, currentClient }: Clien
         <AnimatePresence>
             {isOpen && (
                 <>
+                    {/* Backdrop */}
                     <motion.div
                         initial={{ opacity: 0 }}
                         animate={{ opacity: 1 }}
                         exit={{ opacity: 0 }}
                         onClick={onClose}
                         style={{
-                            position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', zIndex: 500
+                            position: 'fixed',
+                            inset: 0,
+                            background: 'rgba(0,0,0,0.5)',
+                            backdropFilter: 'blur(4px)',
+                            zIndex: 500
                         }}
                     />
+                    {/* Dialog Container */}
                     <motion.div
-                        initial={{ opacity: 0, scale: 0.95, y: '-50%', x: '-50%' }}
-                        animate={{ opacity: 1, scale: 1, y: '-50%', x: '-50%' }}
-                        exit={{ opacity: 0, scale: 0.95, y: '-50%', x: '-50%' }}
+                        initial={{ opacity: 0 }}
+                        animate={{ opacity: 1 }}
+                        exit={{ opacity: 0 }}
                         style={{
                             position: 'fixed',
-                            top: '50%', left: '50%',
-                            width: '90%', maxWidth: 500,
-                            background: 'var(--md-surface)',
-                            borderRadius: 'var(--shape-corner-extra-large)',
-                            boxShadow: 'var(--elevation-3)',
-                            zIndex: 501,
-                            overflow: 'hidden',
+                            inset: 0,
                             display: 'flex',
-                            flexDirection: 'column',
-                            maxHeight: '80vh'
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            zIndex: 501,
+                            pointerEvents: 'none',
                         }}
                     >
+                        <motion.div
+                            initial={{ opacity: 0, scale: 0.95 }}
+                            animate={{ opacity: 1, scale: 1 }}
+                            exit={{ opacity: 0, scale: 0.95 }}
+                            transition={{ type: 'spring', damping: 25, stiffness: 300 }}
+                            style={{
+                                width: '90%',
+                                maxWidth: 500,
+                                background: 'var(--md-surface)',
+                                borderRadius: 'var(--shape-corner-extra-large)',
+                                boxShadow: 'var(--elevation-3)',
+                                overflow: 'hidden',
+                                display: 'flex',
+                                flexDirection: 'column',
+                                maxHeight: '80vh',
+                                pointerEvents: 'auto',
+                            }}
+                        >
                         <div style={{ padding: '16px 24px', borderBottom: '1px solid var(--md-outline-variant)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                             <h3 style={{ margin: 0, fontSize: 20 }}>{isCreating ? 'Novo Cliente' : 'Selecionar Cliente'}</h3>
                             <button onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--md-on-surface)' }}>
@@ -213,6 +233,7 @@ export const ClientDialog = ({ isOpen, onClose, onSelect, currentClient }: Clien
                                 </Button>
                             </div>
                         )}
+                        </motion.div>
                     </motion.div>
                 </>
             )}

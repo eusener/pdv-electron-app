@@ -76,65 +76,99 @@ export const SmartRecommendations = ({
 
     if (layout === 'vertical') {
         return (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-sm)', padding: 'var(--space-md)' }}>
+            <div style={{
+                display: 'flex',
+                flexDirection: 'column',
+                gap: 8,
+                padding: '12px',
+                height: '100%',
+                overflowY: 'auto'
+            }}>
                 {displayItems.map((product, index) => (
                     <motion.button
                         key={product.id}
                         initial={{ opacity: 0, x: -10 }}
                         animate={{ opacity: 1, x: 0 }}
                         transition={{ delay: index * 0.05 }}
-                        whileHover={{ scale: 1.02, backgroundColor: 'var(--md-surface-container-high)' }}
+                        whileHover={{
+                            scale: 1.02,
+                            backgroundColor: 'var(--md-surface-container-high)',
+                            boxShadow: 'var(--elevation-1)'
+                        }}
                         whileTap={{ scale: 0.98 }}
                         onClick={() => onAddToCart(product)}
                         style={{
                             display: 'flex',
                             alignItems: 'center',
-                            gap: 12,
-                            padding: 12,
-                            background: 'var(--md-surface)',
+                            gap: 10,
+                            padding: '10px 12px',
+                            background: 'var(--md-surface-container)',
                             border: '1px solid var(--md-outline-variant)',
-                            borderRadius: 'var(--shape-corner-medium)',
+                            borderRadius: 12,
                             cursor: 'pointer',
                             textAlign: 'left',
                             width: '100%',
-                            color: 'var(--md-on-surface)'
+                            color: 'var(--md-on-surface)',
+                            transition: 'all 0.2s ease'
                         }}
                     >
+                        {/* Icon Container */}
                         <div style={{
-                            fontSize: '1.5rem',
-                            color: 'var(--md-primary)',
+                            width: 40,
+                            height: 40,
+                            borderRadius: 10,
+                            background: `linear-gradient(135deg, ${accentColor}20, ${accentColor}10)`,
+                            border: `1px solid ${accentColor}30`,
                             display: 'flex',
                             alignItems: 'center',
                             justifyContent: 'center',
-                            width: 32, height: 32,
-                            background: 'var(--md-surface-container-high)',
-                            borderRadius: '8px'
+                            color: accentColor,
+                            flexShrink: 0
                         }}>
                             {product.icon}
                         </div>
-                        <div style={{ flex: 1, overflow: 'hidden' }}>
+
+                        {/* Product Info */}
+                        <div style={{ flex: 1, minWidth: 0 }}>
                             <div style={{
-                                fontSize: '0.875rem',
+                                fontSize: 13,
                                 fontWeight: 500,
+                                color: 'var(--md-on-surface)',
                                 whiteSpace: 'nowrap',
                                 overflow: 'hidden',
                                 textOverflow: 'ellipsis',
+                                marginBottom: 2
                             }}>
                                 {product.name}
                             </div>
-                            <div style={{ fontSize: '0.75rem', color: accentColor, fontWeight: 600 }}>
+                            <div style={{
+                                fontSize: 14,
+                                color: accentColor,
+                                fontWeight: 700
+                            }}>
                                 R$ {product.price.toFixed(2)}
                             </div>
                         </div>
-                        <div style={{
-                            background: 'var(--md-secondary-container)',
-                            color: 'var(--md-on-secondary-container)',
-                            borderRadius: '50%',
-                            width: 24, height: 24,
-                            display: 'flex', alignItems: 'center', justifyContent: 'center'
-                        }}>
-                            <Plus size={14} />
-                        </div>
+
+                        {/* Add Button */}
+                        <motion.div
+                            whileHover={{ scale: 1.1 }}
+                            whileTap={{ scale: 0.9 }}
+                            style={{
+                                background: accentColor,
+                                color: 'white',
+                                borderRadius: '50%',
+                                width: 28,
+                                height: 28,
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                boxShadow: `0 2px 8px ${accentColor}40`,
+                                flexShrink: 0
+                            }}
+                        >
+                            <Plus size={16} strokeWidth={2.5} />
+                        </motion.div>
                     </motion.button>
                 ))}
             </div>

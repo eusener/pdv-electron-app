@@ -5,9 +5,13 @@ const SHORTCUTS = [
     { key: 'F2', label: 'Pré-venda' },
     { key: 'F3', label: 'Orçamento' },
     { key: 'F4', label: 'Pagamento' },
+    { key: 'F5', label: 'NF-e' },
     { key: 'F6', label: 'Recuperar' },
     { key: 'F7', label: 'Desconto' },
     { key: 'F8', label: 'Cancelar' },
+    { key: 'F9', label: 'Abrir Caixa' },
+    { key: 'F10', label: 'Sangria' },
+    { key: 'F11', label: 'Fechar Caixa' },
     { key: 'ESC', label: 'Voltar' },
 ];
 

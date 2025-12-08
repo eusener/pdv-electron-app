@@ -14,7 +14,16 @@ import { useBarcodeScanner } from './hooks/useBarcodeScanner';
 import { useShortcuts } from './hooks/useShortcuts';
 import { ShortcutsFooter } from './components/ShortcutsFooter';
 import { SettingsDialog } from './components/SettingsDialog';
+import { CashRegisterDialog } from './components/CashRegisterDialog';
+import { CashMovementDialog } from './components/CashMovementDialog';
+import { CashCloseDialog } from './components/CashCloseDialog';
+import { CashReportDialog } from './components/CashReportDialog';
+import { CashStatusIndicator } from './components/CashStatusIndicator';
+import { NFeDialog } from './components/NFeDialog';
+import { EmissaoNFeDialog } from './components/EmissaoNFeDialog';
+import { NotasPendentesDialog } from './components/NotasPendentesDialog';
 import { generateReceipt } from './services/receiptGenerator';
+import { generateCashReport, generatePDFHTML } from './services/cashReportGenerator';
 import { LayoutConfig, getLayoutById } from './layouts/config';
 import './styles/theme.css';
 import {
@@ -28,7 +37,7 @@ import {
     PackageOpen,
     Sun,
     Moon,
-    Percent,
+    BadgePercent,
     ScanBarcode,
     Save,
     FileText,
@@ -36,7 +45,9 @@ import {
     FolderOpen,
     User,
     UserPlus,
-    Settings
+    Settings,
+    Receipt,
+    FileCheck
 } from 'lucide-react';
 
 interface CartItem {
@@ -71,6 +82,24 @@ export const App = () => {
     const [isProcessing, setIsProcessing] = useState(false);
     const [isOnline, setIsOnline] = useState(navigator.onLine);
 
+    // Cash Register State
+    const [caixaAtual, setCaixaAtual] = useState<any>(null);
+    const [isCashOpenDialogOpen, setIsCashOpenDialogOpen] = useState(false);
+    const [isCashMovementDialogOpen, setIsCashMovementDialogOpen] = useState(false);
+    const [isCashCloseDialogOpen, setIsCashCloseDialogOpen] = useState(false);
+    const [isCashReportDialogOpen, setIsCashReportDialogOpen] = useState(false);
+    const [isNFeDialogOpen, setIsNFeDialogOpen] = useState(false);
+    const [isEmissaoNFeDialogOpen, setIsEmissaoNFeDialogOpen] = useState(false);
+    const [lastSaleData, setLastSaleData] = useState<{
+        id: string;
+        total: number;
+        subtotal: number;
+        items: Array<{ id: number; name: string; price: number; qtd: number }>;
+        payments: Array<{ method: string; amount: number }>;
+        client?: { id?: number; name: string; document?: string };
+    } | null>(null);
+    const [isNotasPendentesDialogOpen, setIsNotasPendentesDialogOpen] = useState(false);
+
     // Restaurant State
     const [tables] = useState(() => generateSampleTables());
     const [selectedTable, setSelectedTable] = useState<number | null>(null);
@@ -87,6 +116,15 @@ export const App = () => {
             window.removeEventListener('online', handleOnline);
             window.removeEventListener('offline', handleOffline);
         };
+    }, []);
+
+    // Load current cash register on startup
+    React.useEffect(() => {
+        window.api.getCaixaAtual().then(res => {
+            if (res.success && res.caixa) {
+                setCaixaAtual(res.caixa);
+            }
+        });
     }, []);
 
     const [theme, setTheme] = useState<'light' | 'dark'>(() => {
@@ -121,13 +159,17 @@ export const App = () => {
 
     const addToCart = (product: { id: number; name: string; price: number; icon?: React.ReactNode; category?: string }) => {
         setCart(prev => {
-            const existing = prev.find(p => p.id === product.id);
-            if (existing) {
-                return prev.map(p =>
+            const existingIndex = prev.findIndex(p => p.id === product.id);
+            if (existingIndex !== -1) {
+                // Item exists: increment quantity and move to top
+                const updated = prev.map(p =>
                     p.id === product.id ? { ...p, qtd: p.qtd + 1 } : p
                 );
+                const [item] = updated.splice(existingIndex, 1);
+                return [item, ...updated];
             }
-            return [...prev, { ...product, qtd: 1 }];
+            // New item: add to top
+            return [{ ...product, qtd: 1 }, ...prev];
         });
     };
 
@@ -142,8 +184,25 @@ export const App = () => {
         return Math.max(0, gross - discAmount);
     };
 
+    const calculateItemDiscount = (item: CartItem) => {
+        if (!item.discount) return 0;
+        const gross = item.price * item.qtd;
+        return item.discount.type === 'percent' ? gross * (item.discount.value / 100) : item.discount.value;
+    };
+
+    // Subtotal bruto (sem descontos de item)
+    const grossSubtotal = cart.reduce((acc, item) => acc + (item.price * item.qtd), 0);
+    // Total de descontos por item
+    const itemsDiscountTotal = cart.reduce((acc, item) => acc + calculateItemDiscount(item), 0);
+    // Subtotal com descontos de item aplicados
     const subtotal = cart.reduce((acc, item) => acc + calculateItemTotal(item), 0);
+    // Desconto global
     const globalDiscountAmount = globalDiscount ? (globalDiscount.type === 'percent' ? subtotal * (globalDiscount.value / 100) : globalDiscount.value) : 0;
+    // Total de todos os descontos
+    const totalDiscounts = itemsDiscountTotal + globalDiscountAmount;
+    // Percentual total de desconto
+    const totalDiscountPercent = grossSubtotal > 0 ? (totalDiscounts / grossSubtotal) * 100 : 0;
+    // Total final
     const total = Math.max(0, subtotal - globalDiscountAmount);
 
     const handleApplyDiscount = (type: 'fixed' | 'percent', value: number) => {
@@ -194,14 +253,20 @@ export const App = () => {
         setIsProcessing(true);
         setIsPaymentOpen(false);
         try {
+            // Strip non-serializable properties (React elements) for IPC
+            const serializableItems = cart.map(({ icon, ...item }) => item);
+            const serializableClient = client ? { id: client.id, name: client.name, document: client.document } : null;
+
+            const saleId = Math.random().toString(36).substr(2, 9);
             const saleData = {
+                id: saleId,
                 total,
                 subtotal,
                 globalDiscount,
                 paymentMethod: 'multiple',
                 payments,
-                client, // Add client to sale data
-                items: cart,
+                client: serializableClient,
+                items: serializableItems,
                 isOffline: !isOnline,
                 totalTax: { icms: total * 0.18, ibs: total * 0.01, cbs: total * 0.09 },
                 status: 'completed',
@@ -220,10 +285,24 @@ export const App = () => {
                     console.error('Print error', e);
                 }
 
+                // Prepare data for NFe emission dialog
+                setLastSaleData({
+                    id: saleId,
+                    total,
+                    subtotal,
+                    items: serializableItems,
+                    payments: payments.map(p => ({ method: p.method, amount: p.amount })),
+                    client: serializableClient || undefined,
+                });
+
                 setCart([]);
                 setGlobalDiscount(null);
+                setClient(null);
                 setScanMessage({ text: 'Venda finalizada com sucesso!', type: 'success' });
                 setTimeout(() => setScanMessage(null), 3000);
+
+                // Open NFe emission dialog
+                setIsEmissaoNFeDialogOpen(true);
             } else {
                 setScanMessage({ text: 'Erro backend: ' + (response.error || 'Falha ao salvar'), type: 'error' });
                 setTimeout(() => setScanMessage(null), 3000);
@@ -264,12 +343,63 @@ export const App = () => {
             date: new Date().toISOString(),
             items: cart,
             total,
+            clientName: client ? client.name : 'Cliente Balcão'
         };
         setSavedSales([newSale, ...savedSales]);
         setCart([]);
         setGlobalDiscount(null);
+        setClient(null);
         setScanMessage({ text: 'Orçamento salvo!', type: 'success' });
         setTimeout(() => setScanMessage(null), 3000);
+    };
+
+    // Cash Register Handlers
+    const handleCashRegisterSuccess = (caixa: any) => {
+        setCaixaAtual(caixa);
+        setScanMessage({ text: 'Caixa aberto com sucesso!', type: 'success' });
+        setTimeout(() => setScanMessage(null), 3000);
+    };
+
+    const handleCashMovementSuccess = () => {
+        setScanMessage({ text: 'Movimento registrado!', type: 'success' });
+        setTimeout(() => setScanMessage(null), 3000);
+    };
+
+    const handleCashCloseSuccess = () => {
+        setCaixaAtual(null);
+        setScanMessage({ text: 'Caixa fechado com sucesso!', type: 'success' });
+        setTimeout(() => setScanMessage(null), 3000);
+    };
+
+    const handleCashPrint = async (resumo: any) => {
+        try {
+            const config = await window.api.getPrinterConfig();
+            const content = generateCashReport(resumo, config);
+            if (config && config.printerName) {
+                await window.api.printData({ content, type: config.type, printerName: config.printerName });
+            } else {
+                const printWindow = window.open('', '_blank');
+                if (printWindow) {
+                    printWindow.document.write(content);
+                    printWindow.document.close();
+                    printWindow.print();
+                }
+            }
+        } catch (e) {
+            console.error('Print error:', e);
+        }
+    };
+
+    const handleCashExportPDF = async (resumo: any) => {
+        try {
+            const html = generatePDFHTML(resumo);
+            const timestamp = new Date().toISOString().slice(0, 10);
+            await window.api.generatePDF({ html, filename: `fechamento-caixa-${timestamp}.pdf` });
+            setScanMessage({ text: 'PDF exportado com sucesso!', type: 'success' });
+            setTimeout(() => setScanMessage(null), 3000);
+        } catch (e) {
+            console.error('PDF export error:', e);
+        }
     };
 
     useShortcuts({
@@ -277,6 +407,7 @@ export const App = () => {
         onF2: handleSavePreSale,
         onF3: handleSaveQuote,
         onF4: handlePreCheckout,
+        onF5: () => cart.length > 0 && setIsNFeDialogOpen(true),
         onF6: () => setIsSavedSalesOpen(true),
         onF7: () => setDiscountTarget('global'),
         onF8: () => {
@@ -286,14 +417,22 @@ export const App = () => {
                 setGlobalDiscount(null);
             }
         },
+        onF9: () => setIsCashOpenDialogOpen(true),
+        onF10: () => caixaAtual && setIsCashMovementDialogOpen(true),
+        onF11: () => caixaAtual && setIsCashCloseDialogOpen(true),
         onEscape: () => {
             if (isPaymentOpen) { setIsPaymentOpen(false); return; }
             if (isClientDialogOpen) { setIsClientDialogOpen(false); return; }
             if (isSavedSalesOpen) { setIsSavedSalesOpen(false); return; }
             if (isLayoutSelectorOpen) { setIsLayoutSelectorOpen(false); return; }
+            if (isCashOpenDialogOpen) { setIsCashOpenDialogOpen(false); return; }
+            if (isCashMovementDialogOpen) { setIsCashMovementDialogOpen(false); return; }
+            if (isCashCloseDialogOpen) { setIsCashCloseDialogOpen(false); return; }
+            if (isCashReportDialogOpen) { setIsCashReportDialogOpen(false); return; }
+            if (isNFeDialogOpen) { setIsNFeDialogOpen(false); return; }
+            if (isEmissaoNFeDialogOpen) { setIsEmissaoNFeDialogOpen(false); return; }
             if (discountTarget) { setDiscountTarget(null); return; }
             if (selectedCategory) { setSelectedCategory(null); return; }
-            // Optional: if (search) setSearch('');
         }
     });
 
@@ -586,6 +725,83 @@ export const App = () => {
                         </div>
                     </div>
 
+                    {/* Client Display */}
+                    {client && (
+                        <motion.div
+                            initial={{ opacity: 0, y: -10 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            style={{
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: 10,
+                                padding: '10px 12px',
+                                marginBottom: 'var(--space-sm)',
+                                background: 'var(--md-primary-container)',
+                                borderRadius: 'var(--shape-corner-medium)',
+                                cursor: 'pointer',
+                            }}
+                            onClick={() => setIsClientDialogOpen(true)}
+                        >
+                            <div style={{
+                                width: 36,
+                                height: 36,
+                                borderRadius: '50%',
+                                background: 'var(--md-primary)',
+                                color: 'var(--md-on-primary)',
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                fontWeight: 600,
+                                fontSize: 14,
+                            }}>
+                                {client.name.charAt(0).toUpperCase()}
+                            </div>
+                            <div style={{ flex: 1, minWidth: 0 }}>
+                                <div style={{
+                                    fontSize: 14,
+                                    fontWeight: 600,
+                                    color: 'var(--md-on-primary-container)',
+                                    whiteSpace: 'nowrap',
+                                    overflow: 'hidden',
+                                    textOverflow: 'ellipsis',
+                                }}>
+                                    {client.name}
+                                </div>
+                                <div style={{
+                                    fontSize: 11,
+                                    color: 'var(--md-on-primary-container)',
+                                    opacity: 0.8,
+                                }}>
+                                    {client.document}
+                                </div>
+                            </div>
+                            <motion.button
+                                whileHover={{ scale: 1.1 }}
+                                whileTap={{ scale: 0.9 }}
+                                onClick={(e) => {
+                                    e.stopPropagation();
+                                    setClient(null);
+                                }}
+                                style={{
+                                    background: 'var(--md-on-primary-container)',
+                                    color: 'var(--md-primary-container)',
+                                    border: 'none',
+                                    borderRadius: '50%',
+                                    width: 24,
+                                    height: 24,
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'center',
+                                    cursor: 'pointer',
+                                    opacity: 0.7,
+                                }}
+                                title="Remover cliente"
+                            >
+                                <X size={14} />
+                            </motion.button>
+                        </motion.div>
+                    )}
+
                     {/* Divider */}
                     <div style={{
                         height: 1,
@@ -616,80 +832,159 @@ export const App = () => {
                             </div>
                         ) : (
                             <AnimatePresence mode="popLayout">
-                                {cart.map((item) => (
-                                    <motion.div
-                                        key={item.id}
-                                        layout
-                                        initial={{ opacity: 0, x: -20 }}
-                                        animate={{ opacity: 1, x: 0 }}
-                                        exit={{ opacity: 0, x: 20 }}
-                                    >
-                                        <ListItem
-                                            leadingIcon={item.icon || <PackageOpen size={24} />}
-                                            headline={item.name}
-                                            supportingText={`${item.qtd}x R$ ${item.price.toFixed(2)}`}
-                                            trailingContent={
-                                                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                                                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', marginRight: 4 }}>
-                                                        {item.discount && (
-                                                            <span style={{
-                                                                fontSize: 10,
-                                                                textDecoration: 'line-through',
-                                                                color: 'var(--md-error)'
-                                                            }}>
-                                                                R$ {(item.price * item.qtd).toFixed(2)}
-                                                            </span>
-                                                        )}
-                                                        <span style={{
-                                                            fontWeight: 500,
-                                                            color: 'var(--md-primary)',
-                                                        }}>
-                                                            R$ {calculateItemTotal(item).toFixed(2)}
-                                                        </span>
-                                                    </div>
+                                {cart.map((item) => {
+                                    const itemGross = item.price * item.qtd;
+                                    const itemDiscount = calculateItemDiscount(item);
+                                    const itemTotal = calculateItemTotal(item);
+                                    const discountPercent = item.discount?.type === 'percent'
+                                        ? item.discount.value
+                                        : itemGross > 0 ? (itemDiscount / itemGross) * 100 : 0;
 
-                                                    <motion.button
-                                                        whileTap={{ scale: 0.9 }}
-                                                        onClick={() => setDiscountTarget(item.id)}
-                                                        style={{
-                                                            width: 32,
-                                                            height: 32,
-                                                            borderRadius: 'var(--shape-corner-full)',
-                                                            border: 'none',
-                                                            background: item.discount ? 'var(--md-secondary-container)' : 'transparent',
-                                                            color: item.discount ? 'var(--md-on-secondary-container)' : 'var(--md-on-surface-variant)',
-                                                            cursor: 'pointer',
-                                                            display: 'flex',
-                                                            alignItems: 'center',
-                                                            justifyContent: 'center'
-                                                        }}
-                                                    >
-                                                        <Percent size={16} />
-                                                    </motion.button>
+                                    return (
+                                        <motion.div
+                                            key={item.id}
+                                            layout
+                                            initial={{ opacity: 0, x: -20 }}
+                                            animate={{ opacity: 1, x: 0 }}
+                                            exit={{ opacity: 0, x: 20 }}
+                                            style={{
+                                                display: 'flex',
+                                                alignItems: 'center',
+                                                gap: 12,
+                                                padding: '12px 0',
+                                                borderBottom: '1px solid var(--md-outline-variant)',
+                                            }}
+                                        >
+                                            {/* Ícone do produto */}
+                                            <div style={{
+                                                width: 48,
+                                                height: 48,
+                                                borderRadius: 'var(--shape-corner-medium)',
+                                                background: 'var(--md-primary-container)',
+                                                display: 'flex',
+                                                alignItems: 'center',
+                                                justifyContent: 'center',
+                                                color: 'var(--md-on-primary-container)',
+                                                flexShrink: 0,
+                                            }}>
+                                                {item.icon || <PackageOpen size={24} />}
+                                            </div>
 
-                                                    <motion.button
-                                                        whileTap={{ scale: 0.9 }}
-                                                        onClick={() => removeFromCart(item.id)}
-                                                        style={{
-                                                            width: 32,
-                                                            height: 32,
-                                                            borderRadius: 'var(--shape-corner-full)',
-                                                            border: 'none',
-                                                            background: 'var(--md-error-container)',
-                                                            color: 'var(--md-on-error-container)',
-                                                            cursor: 'pointer',
-                                                            display: 'flex',
-                                                            alignItems: 'center',
-                                                            justifyContent: 'center'
-                                                        }}
-                                                    >
-                                                        <X size={16} />
-                                                    </motion.button>
+                                            {/* Info do produto */}
+                                            <div style={{ flex: 1, minWidth: 0 }}>
+                                                <div style={{
+                                                    fontWeight: 500,
+                                                    fontSize: 14,
+                                                    color: 'var(--md-on-surface)',
+                                                    marginBottom: 2,
+                                                    whiteSpace: 'nowrap',
+                                                    overflow: 'hidden',
+                                                    textOverflow: 'ellipsis',
+                                                }}>
+                                                    {item.name}
                                                 </div>
-                                            }
-                                        />
-                                    </motion.div>
-                                ))}
+                                                <div style={{
+                                                    fontSize: 12,
+                                                    color: 'var(--md-on-surface-variant)',
+                                                    display: 'flex',
+                                                    alignItems: 'center',
+                                                    gap: 8,
+                                                }}>
+                                                    <span>{item.qtd}x R$ {item.price.toFixed(2)}</span>
+                                                    {item.discount && (
+                                                        <span style={{
+                                                            background: 'var(--accent-success)',
+                                                            color: 'white',
+                                                            fontSize: 10,
+                                                            fontWeight: 600,
+                                                            padding: '2px 6px',
+                                                            borderRadius: 4,
+                                                        }}>
+                                                            -{discountPercent.toFixed(0)}%
+                                                        </span>
+                                                    )}
+                                                </div>
+                                            </div>
+
+                                            {/* Preço */}
+                                            <div style={{
+                                                display: 'flex',
+                                                flexDirection: 'column',
+                                                alignItems: 'flex-end',
+                                                minWidth: 70,
+                                            }}>
+                                                {item.discount ? (
+                                                    <>
+                                                        <span style={{
+                                                            fontSize: 11,
+                                                            textDecoration: 'line-through',
+                                                            color: 'var(--md-on-surface-variant)',
+                                                            opacity: 0.6,
+                                                        }}>
+                                                            R$ {itemGross.toFixed(2)}
+                                                        </span>
+                                                        <span style={{
+                                                            fontWeight: 700,
+                                                            fontSize: 15,
+                                                            color: 'var(--accent-success)',
+                                                        }}>
+                                                            R$ {itemTotal.toFixed(2)}
+                                                        </span>
+                                                    </>
+                                                ) : (
+                                                    <span style={{
+                                                        fontWeight: 600,
+                                                        fontSize: 14,
+                                                        color: 'var(--md-primary)',
+                                                    }}>
+                                                        R$ {itemTotal.toFixed(2)}
+                                                    </span>
+                                                )}
+                                            </div>
+
+                                            {/* Ações */}
+                                            <div style={{ display: 'flex', gap: 4 }}>
+                                                <motion.button
+                                                    whileTap={{ scale: 0.9 }}
+                                                    onClick={() => setDiscountTarget(item.id)}
+                                                    style={{
+                                                        width: 28,
+                                                        height: 28,
+                                                        borderRadius: 'var(--shape-corner-full)',
+                                                        border: 'none',
+                                                        background: item.discount ? 'var(--accent-success)' : 'var(--md-surface-container-high)',
+                                                        color: item.discount ? 'white' : 'var(--md-on-surface-variant)',
+                                                        cursor: 'pointer',
+                                                        display: 'flex',
+                                                        alignItems: 'center',
+                                                        justifyContent: 'center'
+                                                    }}
+                                                >
+                                                    <BadgePercent size={14} />
+                                                </motion.button>
+
+                                                <motion.button
+                                                    whileTap={{ scale: 0.9 }}
+                                                    onClick={() => removeFromCart(item.id)}
+                                                    style={{
+                                                        width: 28,
+                                                        height: 28,
+                                                        borderRadius: 'var(--shape-corner-full)',
+                                                        border: 'none',
+                                                        background: 'var(--md-error-container)',
+                                                        color: 'var(--md-on-error-container)',
+                                                        cursor: 'pointer',
+                                                        display: 'flex',
+                                                        alignItems: 'center',
+                                                        justifyContent: 'center'
+                                                    }}
+                                                >
+                                                    <X size={14} />
+                                                </motion.button>
+                                            </div>
+                                        </motion.div>
+                                    );
+                                })}
                             </AnimatePresence>
                         )}
                     </div>
@@ -702,30 +997,52 @@ export const App = () => {
                         paddingTop: 'var(--space-md)',
                         borderTop: '1px solid var(--md-outline-variant)',
                     }}>
+                        {/* Subtotal bruto */}
                         <div style={{
                             display: 'flex',
                             justifyContent: 'space-between',
-                            marginBottom: 'var(--space-sm)',
+                            marginBottom: 'var(--space-xs)',
                             fontSize: 14,
                             color: 'var(--md-on-surface-variant)',
                         }}>
                             <span>{cart.reduce((a, i) => a + i.qtd, 0)} itens</span>
                             <span>Subtotal</span>
-                            <span>R$ {subtotal.toFixed(2)}</span>
+                            <span style={{ textDecoration: totalDiscounts > 0 ? 'line-through' : 'none', opacity: totalDiscounts > 0 ? 0.6 : 1 }}>
+                                R$ {grossSubtotal.toFixed(2)}
+                            </span>
                         </div>
 
-                        {/* Discount Line */}
+                        {/* Descontos por item */}
+                        {itemsDiscountTotal > 0 && (
+                            <div style={{
+                                display: 'flex',
+                                justifyContent: 'space-between',
+                                alignItems: 'center',
+                                fontSize: 13,
+                                color: 'var(--accent-success)',
+                                marginBottom: 'var(--space-xs)',
+                            }}>
+                                <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                                    <BadgePercent size={12} />
+                                    Descontos nos itens
+                                </span>
+                                <span>- R$ {itemsDiscountTotal.toFixed(2)}</span>
+                            </div>
+                        )}
+
+                        {/* Desconto Global */}
                         {globalDiscount ? (
                             <div style={{
                                 display: 'flex',
                                 justifyContent: 'space-between',
                                 alignItems: 'center',
-                                fontSize: 14,
-                                color: 'var(--md-primary)',
-                                marginBottom: 'var(--space-md)',
+                                fontSize: 13,
+                                color: 'var(--accent-success)',
+                                marginBottom: 'var(--space-xs)',
                             }}>
                                 <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                                    <span>Desconto Global ({globalDiscount.type === 'percent' ? `${globalDiscount.value}%` : 'Fixo'})</span>
+                                    <BadgePercent size={12} />
+                                    <span>Desconto geral ({globalDiscount.type === 'percent' ? `${globalDiscount.value}%` : 'Fixo'})</span>
                                     <button
                                         onClick={() => setGlobalDiscount(null)}
                                         style={{
@@ -742,8 +1059,33 @@ export const App = () => {
                                 </div>
                                 <span>- R$ {globalDiscountAmount.toFixed(2)}</span>
                             </div>
-                        ) : (
-                            <div style={{ marginBottom: 'var(--space-md)', textAlign: 'right' }}>
+                        ) : null}
+
+                        {/* Total de descontos */}
+                        {totalDiscounts > 0 && (
+                            <div style={{
+                                display: 'flex',
+                                justifyContent: 'space-between',
+                                alignItems: 'center',
+                                fontSize: 14,
+                                fontWeight: 600,
+                                color: 'var(--accent-success)',
+                                marginBottom: 'var(--space-sm)',
+                                padding: '8px 12px',
+                                background: 'rgba(76, 175, 80, 0.1)',
+                                borderRadius: 'var(--shape-corner-medium)',
+                            }}>
+                                <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                                    <BadgePercent size={16} />
+                                    Você economizou {totalDiscountPercent.toFixed(1)}%
+                                </span>
+                                <span>- R$ {totalDiscounts.toFixed(2)}</span>
+                            </div>
+                        )}
+
+                        {/* Botão adicionar desconto */}
+                        {!globalDiscount && (
+                            <div style={{ marginBottom: 'var(--space-sm)', textAlign: 'right' }}>
                                 <button
                                     onClick={() => setDiscountTarget('global')}
                                     style={{
@@ -758,7 +1100,7 @@ export const App = () => {
                                         gap: 4
                                     }}
                                 >
-                                    <Percent size={14} /> Adicionar Desconto Global
+                                    <BadgePercent size={14} /> Adicionar Desconto
                                 </button>
                             </div>
                         )}
@@ -777,7 +1119,7 @@ export const App = () => {
                             </span>
                         </div>
 
-                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 12 }}>
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12, marginBottom: 12 }}>
                             <Button
                                 variant="tonal"
                                 onClick={handleSavePreSale}
@@ -793,6 +1135,18 @@ export const App = () => {
                                 style={{ flex: 1 }}
                             >
                                 <FileText size={18} style={{ marginRight: 8 }} /> Orçamento
+                            </Button>
+                            <Button
+                                variant="tonal"
+                                onClick={() => setIsNFeDialogOpen(true)}
+                                disabled={cart.length === 0 || isProcessing}
+                                style={{
+                                    flex: 1,
+                                    background: 'var(--md-tertiary-container)',
+                                    color: 'var(--md-on-tertiary-container)',
+                                }}
+                            >
+                                <Receipt size={18} style={{ marginRight: 8 }} /> NF-e
                             </Button>
                         </div>
 
@@ -832,16 +1186,54 @@ export const App = () => {
 
                 {/* RECOMMENDATIONS PANEL */}
                 {showRecs && (
-                    <div className="recs-panel" style={{ order: 2 }}>
+                    <div className="recs-panel" style={{
+                        order: 2,
+                        display: 'flex',
+                        flexDirection: 'column',
+                        background: 'var(--md-surface-container-lowest)',
+                        borderLeft: '1px solid var(--md-outline-variant)',
+                        borderRight: '1px solid var(--md-outline-variant)',
+                    }}>
                         <div style={{
-                            padding: 'var(--space-md)',
+                            padding: '16px',
+                            background: `linear-gradient(135deg, ${currentLayout.theme.accentPrimary}15, ${currentLayout.theme.accentPrimary}05)`,
                             borderBottom: '1px solid var(--md-outline-variant)',
-                            fontSize: 14,
-                            fontWeight: 500,
-                            color: 'var(--md-on-surface-variant)',
-                            display: 'flex', alignItems: 'center', gap: 8
                         }}>
-                            <PackageOpen size={16} /> Combine com sua compra
+                            <div style={{
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: 10,
+                            }}>
+                                <div style={{
+                                    width: 36,
+                                    height: 36,
+                                    borderRadius: 10,
+                                    background: currentLayout.theme.accentPrimary,
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'center',
+                                    color: 'white',
+                                    boxShadow: `0 4px 12px ${currentLayout.theme.accentPrimary}40`
+                                }}>
+                                    <PackageOpen size={18} />
+                                </div>
+                                <div>
+                                    <div style={{
+                                        fontSize: 14,
+                                        fontWeight: 600,
+                                        color: 'var(--md-on-surface)',
+                                        marginBottom: 2
+                                    }}>
+                                        Sugestões
+                                    </div>
+                                    <div style={{
+                                        fontSize: 11,
+                                        color: 'var(--md-on-surface-variant)',
+                                    }}>
+                                        Combine com sua compra
+                                    </div>
+                                </div>
+                            </div>
                         </div>
                         <SmartRecommendations
                             cart={cart}
@@ -884,6 +1276,13 @@ export const App = () => {
                             </div>
                         </div>
                         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                            <CashStatusIndicator
+                                caixa={caixaAtual}
+                                onOpenCaixa={() => setIsCashOpenDialogOpen(true)}
+                                onCloseCaixa={() => setIsCashCloseDialogOpen(true)}
+                                onMovimento={() => setIsCashMovementDialogOpen(true)}
+                                onRelatorios={() => setIsCashReportDialogOpen(true)}
+                            />
                             <motion.button
                                 whileHover={{ backgroundColor: 'rgba(255,255,255,0.08)' }}
                                 whileTap={{ scale: 0.95 }}
@@ -909,7 +1308,24 @@ export const App = () => {
                             />
                             <motion.button
                                 whileTap={{ scale: 0.95 }}
+                                onClick={() => setIsNotasPendentesDialogOpen(true)}
+                                title="Notas Pendentes"
+                                style={{
+                                    width: 40, height: 40,
+                                    borderRadius: '50%',
+                                    border: 'none',
+                                    background: 'var(--md-surface-container-high)',
+                                    color: 'var(--md-on-surface)',
+                                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                    cursor: 'pointer'
+                                }}
+                            >
+                                <FileCheck size={20} />
+                            </motion.button>
+                            <motion.button
+                                whileTap={{ scale: 0.95 }}
                                 onClick={() => setIsSettingsOpen(true)}
+                                title="Configurações"
                                 style={{
                                     width: 40, height: 40,
                                     borderRadius: '50%',
@@ -1078,6 +1494,97 @@ export const App = () => {
             <SettingsDialog
                 isOpen={isSettingsOpen}
                 onClose={() => setIsSettingsOpen(false)}
+            />
+
+            {/* Cash Register Dialogs */}
+            <CashRegisterDialog
+                isOpen={isCashOpenDialogOpen}
+                onClose={() => setIsCashOpenDialogOpen(false)}
+                onSuccess={handleCashRegisterSuccess}
+            />
+
+            {caixaAtual && (
+                <>
+                    <CashMovementDialog
+                        isOpen={isCashMovementDialogOpen}
+                        onClose={() => setIsCashMovementDialogOpen(false)}
+                        caixaId={caixaAtual.id}
+                        onSuccess={handleCashMovementSuccess}
+                    />
+
+                    <CashCloseDialog
+                        isOpen={isCashCloseDialogOpen}
+                        onClose={() => setIsCashCloseDialogOpen(false)}
+                        caixaId={caixaAtual.id}
+                        onSuccess={handleCashCloseSuccess}
+                        onPrint={handleCashPrint}
+                        onExportPDF={handleCashExportPDF}
+                    />
+                </>
+            )}
+
+            <CashReportDialog
+                isOpen={isCashReportDialogOpen}
+                onClose={() => setIsCashReportDialogOpen(false)}
+            />
+
+            <NFeDialog
+                isOpen={isNFeDialogOpen}
+                onClose={() => setIsNFeDialogOpen(false)}
+                initialItems={cart.map(({ icon, ...item }) => item)}
+                onEmit={async (nfeData) => {
+                    console.log('Emitindo NFe:', nfeData);
+                    // TODO: Implement actual NFe emission via IPC
+                    await new Promise(resolve => setTimeout(resolve, 2000));
+                    setScanMessage({ text: 'NF-e emitida com sucesso!', type: 'success' });
+                    setTimeout(() => setScanMessage(null), 3000);
+                }}
+            />
+
+            <EmissaoNFeDialog
+                isOpen={isEmissaoNFeDialogOpen}
+                onClose={() => {
+                    setIsEmissaoNFeDialogOpen(false);
+                    setLastSaleData(null);
+                }}
+                saleData={lastSaleData}
+                onEmitirAgora={async (saleData, options) => {
+                    console.log('Emitindo nota fiscal:', { saleData, options });
+                    // TODO: Integrar com Tecnospeed API via IPC
+                    await new Promise(resolve => setTimeout(resolve, 2000));
+                    setScanMessage({ text: `${options.tipo.toUpperCase()} emitida com sucesso!`, type: 'success' });
+                    setTimeout(() => setScanMessage(null), 3000);
+                }}
+                onSalvarParaLote={async (saleData) => {
+                    const notaPendente = {
+                        id: Math.random().toString(36).substr(2, 9),
+                        tipo: 'nfce' as const,
+                        status: 'pendente' as const,
+                        dataCriacao: new Date().toISOString(),
+                        vendaId: saleData.id,
+                        clienteNome: saleData.client?.name,
+                        valorTotal: saleData.total,
+                        tentativas: 0,
+                    };
+
+                    try {
+                        await window.api.salvarNotaPendente(notaPendente);
+                        setScanMessage({ text: 'Nota salva para emissão em lote!', type: 'success' });
+                    } catch (e) {
+                        console.error('Erro ao salvar nota pendente:', e);
+                        setScanMessage({ text: 'Erro ao salvar nota para lote', type: 'error' });
+                    }
+                    setTimeout(() => setScanMessage(null), 3000);
+                }}
+                onPular={() => {
+                    setScanMessage({ text: 'Emissão de nota ignorada', type: 'success' });
+                    setTimeout(() => setScanMessage(null), 3000);
+                }}
+            />
+
+            <NotasPendentesDialog
+                isOpen={isNotasPendentesDialogOpen}
+                onClose={() => setIsNotasPendentesDialogOpen(false)}
             />
         </>
     );
