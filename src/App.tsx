@@ -13,6 +13,8 @@ import { ClientDialog, Client } from './components/ClientDialog';
 import { useBarcodeScanner } from './hooks/useBarcodeScanner';
 import { useShortcuts } from './hooks/useShortcuts';
 import { ShortcutsFooter } from './components/ShortcutsFooter';
+import { SettingsDialog } from './components/SettingsDialog';
+import { generateReceipt } from './services/receiptGenerator';
 import { LayoutConfig, getLayoutById } from './layouts/config';
 import './styles/theme.css';
 import {
@@ -33,7 +35,8 @@ import {
     CheckCircle2,
     FolderOpen,
     User,
-    UserPlus
+    UserPlus,
+    Settings
 } from 'lucide-react';
 
 interface CartItem {
@@ -64,6 +67,7 @@ export const App = () => {
     const [client, setClient] = useState<Client | null>(null);
     const [isClientDialogOpen, setIsClientDialogOpen] = useState(false);
     const [lastScannedProduct, setLastScannedProduct] = useState<{ name: string; price: number; icon: React.ReactNode } | null>(null);
+    const [isSettingsOpen, setIsSettingsOpen] = useState(false);
     const [isProcessing, setIsProcessing] = useState(false);
     const [isOnline, setIsOnline] = useState(navigator.onLine);
 
@@ -205,9 +209,23 @@ export const App = () => {
             };
             const response = await window.api.saveSale(saleData);
             if (response.success) {
+                // Printing
+                try {
+                    const config = await window.api.getPrinterConfig();
+                    if (config && config.printerName) {
+                        const content = generateReceipt(saleData, config);
+                        window.api.printData({ content, type: config.type, printerName: config.printerName });
+                    }
+                } catch (e) {
+                    console.error('Print error', e);
+                }
+
                 setCart([]);
                 setGlobalDiscount(null);
                 setScanMessage({ text: 'Venda finalizada com sucesso!', type: 'success' });
+                setTimeout(() => setScanMessage(null), 3000);
+            } else {
+                setScanMessage({ text: 'Erro backend: ' + (response.error || 'Falha ao salvar'), type: 'error' });
                 setTimeout(() => setScanMessage(null), 3000);
             }
         } catch (e) {
@@ -889,6 +907,21 @@ export const App = () => {
                                 layout={currentLayout}
                                 onClick={() => setIsLayoutSelectorOpen(true)}
                             />
+                            <motion.button
+                                whileTap={{ scale: 0.95 }}
+                                onClick={() => setIsSettingsOpen(true)}
+                                style={{
+                                    width: 40, height: 40,
+                                    borderRadius: '50%',
+                                    border: 'none',
+                                    background: 'var(--md-surface-container-high)',
+                                    color: 'var(--md-on-surface)',
+                                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                    cursor: 'pointer'
+                                }}
+                            >
+                                <Settings size={20} />
+                            </motion.button>
                         </div>
                     </div>
 
@@ -1041,6 +1074,11 @@ export const App = () => {
                     </motion.div>
                 )}
             </AnimatePresence>
+
+            <SettingsDialog
+                isOpen={isSettingsOpen}
+                onClose={() => setIsSettingsOpen(false)}
+            />
         </>
     );
 };
